@@ -1,0 +1,19 @@
+{
+    "name": "500 Perguntas de Amor - José & Rita",
+    "short_name": "500 Perguntas",
+    "description": "Um jogo para casais se conhecerem melhor",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#1a0011",
+    "theme_color": "#e91e63",
+    "orientation": "portrait-primary",
+    "categories": ["games", "entertainment"],
+    "icons": [
+        {
+            "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💕%3C/text%3E%3C/svg%3E",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        }
+    ]
+}
