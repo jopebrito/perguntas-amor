@@ -590,6 +590,26 @@ const App = {
     },
 
     // ══════════ RESET ══════════
+    resetPinConfirm() {
+        document.getElementById('modal').style.display = '';
+        document.getElementById('modal-msg').textContent = `Redefinir o PIN de ${this.user === 'pedro' ? 'Pedro' : 'Rita'}? Vais ter de criar um novo PIN.`;
+        document.getElementById('modal-confirm').onclick = () => this.doResetPin();
+    },
+
+    async doResetPin() {
+        this.modalClose();
+        delete this.pins[this.user];
+        localStorage.setItem('pr_pins', JSON.stringify(this.pins));
+        if (this.fbOk) {
+            try {
+                await this.db.collection('config').doc('pins').set(this.pins);
+            } catch(e) { console.warn('Reset PIN FB:', e); }
+        }
+        Sound.tap();
+        this.toast('PIN apagado! Faz login de novo para criar um novo. 🔑');
+        this.logout();
+    },
+
     resetConfirm() {
         document.getElementById('modal').style.display = '';
         document.getElementById('modal-msg').textContent = `Apagar TODAS as respostas de ${this.user === 'pedro' ? 'Pedro' : 'Rita'}? Esta ação não pode ser desfeita!`;
