@@ -17,6 +17,30 @@ const firebaseConfig = {
 const PER_DAY = 15;
 const TOTAL_DAYS = Math.ceil(QUESTIONS.length / PER_DAY);
 
+// ── Sweet messages for Rita ──
+const RITA_MSGS = [
+    'Gosto tanto de ti, sabias? 💕',
+    'A pessoa mais bonita do mundo acabou de entrar 🥰',
+    'O meu coração bate mais forte quando estás aqui 💓',
+    'Mesmo longe, estás sempre comigo 🌍❤️',
+    'Tenho tantas saudades tuas... 🥺💕',
+    'Tu és a melhor coisa que me aconteceu 💖',
+    'Estou a contar os dias para te abraçar 🤗',
+    'O meu sorriso preferido é o teu 😊',
+    'Obrigado por existires na minha vida ✨',
+    'Cada resposta tua faz-me gostar mais de ti 💝',
+    'Tu fazes os meus dias melhores, mesmo a 10.759km 🌏',
+    'Adoro descobrir coisas novas sobre ti 🔍💕',
+    'Se pudesse, teletransportava-me para ao pé de ti agora 🚀',
+    'O teu sorriso é o meu lugar favorito 🏠❤️',
+    'Quando crescer, quero ser o teu vizinho do lado 😏💕',
+    'Mais um dia a apaixonar-me mais por ti 📈❤️',
+    'Rita, és especial. Não te esqueças disso nunca 💫',
+    'A distância é temporária, nós somos para sempre 💪❤️',
+    'Hoje é mais um dia perfeito porque tu existes 🌟',
+    'Sabes o que tenho de bom? Tu. 💕',
+];
+
 const CATEGORIES = {
     preferences: { name: "Preferências", emoji: "💫" },
     us:          { name: "Sobre Nós",    emoji: "💑" },
@@ -65,6 +89,7 @@ const App = {
     _selUser: null,
     _saveTimer: null,
     _savePending: false,
+    _refreshTimer: null,
 
     // ══════════ INIT ══════════
     async init() {
@@ -121,21 +146,22 @@ const App = {
         return QUESTIONS.slice(start, start + PER_DAY);
     },
 
+    // Get today's date string in Portugal timezone (YYYY-MM-DD)
+    _ptToday() {
+        return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Lisbon' });
+    },
+
     getUnlockedDays() {
         if (!this.startDate) return 1;
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-        const start = new Date(this.startDate);
-        start.setHours(0, 0, 0, 0);
+        const now = new Date(this._ptToday() + 'T00:00:00');
+        const start = new Date(this.startDate + 'T00:00:00');
         const diff = Math.floor((now - start) / 86400000) + 1;
         return Math.min(Math.max(diff, 1), TOTAL_DAYS);
     },
 
     async ensureStartDate() {
         if (this.startDate) return;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        this.startDate = today.toISOString().split('T')[0];
+        this.startDate = this._ptToday();
         localStorage.setItem('pr_start', this.startDate);
         if (this.fbOk) {
             try {
@@ -219,12 +245,19 @@ const App = {
         await this.loadAll();
         Sound.success();
         this.go('dashboard');
-        this.toast(`Olá ${who === 'pedro' ? 'Pedro' : 'Rita'}! 💕`);
+        if (who === 'rita') {
+            const msg = RITA_MSGS[Math.floor(Math.random() * RITA_MSGS.length)];
+            this.toast(msg);
+        } else {
+            this.toast('Olá Pedro! 💪 Bora jogar!');
+        }
     },
 
     logout() {
         Sound.tap();
         this._flushSave();
+        clearInterval(this._refreshTimer);
+        this._refreshTimer = null;
         this.user = null;
         this.answers = {};
         this.partnerAnswers = {};
@@ -270,6 +303,32 @@ const App = {
         }
 
         localStorage.setItem('pr_a_' + this.user, JSON.stringify(this.answers));
+        this._startRefresh();
+    },
+
+    // Refresh partner data every 30s
+    _startRefresh() {
+        if (this._refreshTimer) return;
+        this._refreshTimer = setInterval(() => this._refreshPartner(), 30000);
+    },
+
+    async _refreshPartner() {
+        if (!this.fbOk || !this.user) return;
+        const p = this.user === 'pedro' ? 'rita' : 'pedro';
+        try {
+            const pd = await this.db.collection('players').doc(p).get();
+            if (pd.exists && pd.data().answers) {
+                this.partnerAnswers = pd.data().answers;
+                // Update calendar if visible
+                if (document.getElementById('screen-dashboard').classList.contains('active')) {
+                    this.renderCalendar();
+                }
+                // Update compare button if in day view
+                if (document.getElementById('screen-day').classList.contains('active')) {
+                    this._updateCompareBtn();
+                }
+            }
+        } catch(e) {}
     },
 
     async saveAnswer(qId, val) {
@@ -365,23 +424,21 @@ const App = {
     },
 
     openDay(day) {
-        const qs = this.getDayQuestions(day);
+        this.currentDay = day;
+        this.dayQuestions = this.getDayQuestions(day);
+        const first = this.dayQuestions.find(q => this.answers[q.id] === undefined);
+        this.qIdx = first ? this.dayQuestions.indexOf(first) : 0;
+        this.go('day');
+        this._updateCompareBtn();
+    },
+
+    _updateCompareBtn() {
+        const qs = this.dayQuestions;
         const myDone = qs.filter(q => this.answers[q.id] !== undefined).length;
         const partnerDone = qs.filter(q => this.partnerAnswers[q.id] !== undefined).length;
         const bothDone = myDone === qs.length && partnerDone === qs.length;
-
-        if (bothDone) {
-            this.currentDay = day;
-            this.renderCompare(day);
-            this.go('compare');
-            return;
-        }
-
-        this.currentDay = day;
-        this.dayQuestions = qs;
-        const first = qs.find(q => this.answers[q.id] === undefined);
-        this.qIdx = first ? qs.indexOf(first) : 0;
-        this.go('day');
+        const btn = document.getElementById('btn-compare');
+        if (btn) btn.style.display = bothDone ? '' : 'none';
     },
 
     // ══════════ ANSWER MODE ══════════
@@ -487,10 +544,13 @@ const App = {
         const list = document.getElementById('compare-list');
 
         // Match percentage (only for non-text questions)
-        const comparable = qs.filter(q => q.type !== 'text' && this.answers[q.id] !== undefined && this.partnerAnswers[q.id] !== undefined);
+        const comparable = qs.filter(q => q.type !== 'text' &&
+            this.answers[q.id] !== undefined && this.partnerAnswers[q.id] !== undefined);
         let matches = 0;
         comparable.forEach(q => {
-            if (String(this.answers[q.id]) === String(this.partnerAnswers[q.id])) matches++;
+            const a = String(this.answers[q.id]);
+            const b = String(this.partnerAnswers[q.id]);
+            if (a === b) matches++;
         });
 
         const matchEl = document.getElementById('compare-match');
@@ -502,13 +562,14 @@ const App = {
             matchEl.style.display = 'none';
         }
 
+        const isP = this.user === 'pedro';
         list.innerHTML = qs.map(q => {
-            const my = this.answers[q.id];
-            const pa = this.partnerAnswers[q.id];
+            const pedroAns = isP ? this.answers[q.id] : this.partnerAnswers[q.id];
+            const ritaAns  = isP ? this.partnerAnswers[q.id] : this.answers[q.id];
             const cat = CATEGORIES[q.cat] || { emoji: '❓' };
-            const bothAnswered = my !== undefined && pa !== undefined;
-            const isMatch = bothAnswered && q.type !== 'text' && String(my) === String(pa);
-            const isDiff = bothAnswered && q.type !== 'text' && String(my) !== String(pa);
+            const bothAnswered = pedroAns !== undefined && ritaAns !== undefined;
+            const isMatch = bothAnswered && q.type !== 'text' && String(pedroAns) === String(ritaAns);
+            const isDiff = bothAnswered && q.type !== 'text' && String(pedroAns) !== String(ritaAns);
 
             return `<div class="cmp-item ${isMatch ? 'cmp-match' : ''} ${isDiff ? 'cmp-diff' : ''}">
                 <div class="cmp-cat">${cat.emoji}</div>
@@ -516,11 +577,11 @@ const App = {
                 <div class="cmp-answers">
                     <div class="cmp-ans cmp-pedro">
                         <div class="cmp-who">Pedro</div>
-                        <div class="cmp-val">${my !== undefined ? this._esc(String(my)) : '<em>—</em>'}</div>
+                        <div class="cmp-val">${pedroAns !== undefined ? this._esc(String(pedroAns)) : '<em>-</em>'}</div>
                     </div>
                     <div class="cmp-ans cmp-rita">
                         <div class="cmp-who">Rita</div>
-                        <div class="cmp-val">${pa !== undefined ? this._esc(String(pa)) : '<em>—</em>'}</div>
+                        <div class="cmp-val">${ritaAns !== undefined ? this._esc(String(ritaAns)) : '<em>-</em>'}</div>
                     </div>
                 </div>
                 ${isMatch ? '<div class="cmp-badge-match">Iguais! 💚</div>' : ''}

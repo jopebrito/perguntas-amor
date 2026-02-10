@@ -476,6 +476,16 @@ body{
     .modal-box{padding:2.2rem}
 }
 
+/* ── Compare day button ── */
+.btn-compare-day{
+    display:block;width:100%;margin-top:1.2rem;
+    background:linear-gradient(135deg,var(--pink),var(--purple));
+    border:none;color:#fff;padding:.75rem;border-radius:var(--rr);
+    font-size:.95rem;font-weight:600;cursor:pointer;
+    transition:var(--tr);
+}
+.btn-compare-day:hover{transform:scale(1.02);filter:brightness(1.15)}
+
 /* ── Safe area ── */
 @supports(padding-top:env(safe-area-inset-top)){
     body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
