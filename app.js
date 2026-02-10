@@ -1,33 +1,37 @@
 /* ======================================================
-   500 PERGUNTAS DE AMOR  –  José & Rita
-   2-phase game: Answer → Guess (Family Feud)
-   PIN auth, Firebase, sounds, progress, reset
+   PEDRO & RITA – O Nosso Jogo
+   Daily questions, calendar, compare mode
+   PIN auth, Firebase sync, sounds
    ====================================================== */
 
 // ── Firebase Config ──
 const firebaseConfig = {
-  apiKey: "AIzaSyD-RN1T3nfjAIRMY9c9hW_kmtz_KdXFHCA",
-  authDomain: "perguntas-amor.firebaseapp.com",
-  projectId: "perguntas-amor",
-  storageBucket: "perguntas-amor.firebasestorage.app",
-  messagingSenderId: "348271320422",
-  appId: "1:348271320422:web:acce1f3d417efd865b7ca7"
+    apiKey: "AIzaSyD-RN1T3nfjAIRMY9c9hW_kmtz_KdXFHCA",
+    authDomain: "perguntas-amor.firebaseapp.com",
+    projectId: "perguntas-amor",
+    storageBucket: "perguntas-amor.firebasestorage.app",
+    messagingSenderId: "348271320422",
+    appId: "1:348271320422:web:acce1f3d417efd865b7ca7"
 };
 
-const CATEGORIES = [
-    { id: 0, name: "Gostos & Preferências", emoji: "🎨" },
-    { id: 1, name: "Sobre Nós",             emoji: "💑" },
-    { id: 2, name: "Sonhos & Futuro",       emoji: "✨" },
-    { id: 3, name: "Recordações",           emoji: "📸" },
-    { id: 4, name: "Comida & Bebida",       emoji: "🍕" },
-    { id: 5, name: "Entretenimento",        emoji: "🎬" },
-    { id: 6, name: "Cenários & Dilemas",    emoji: "🤔" },
-    { id: 7, name: "Amor & Romance",        emoji: "💕" },
-    { id: 8, name: "Viagens & Aventuras",   emoji: "✈️" },
-    { id: 9, name: "Personalidade & Valores", emoji: "🧠" }
-];
+const PER_DAY = 15;
+const TOTAL_DAYS = Math.ceil(QUESTIONS.length / PER_DAY);
 
-// ── Sounds (Web Audio API) ──
+const CATEGORIES = {
+    preferences: { name: "Preferências", emoji: "💫" },
+    us:          { name: "Sobre Nós",    emoji: "💑" },
+    dreams:      { name: "Sonhos",       emoji: "✨" },
+    memories:    { name: "Memórias",     emoji: "📸" },
+    food:        { name: "Gostos",       emoji: "🍷" },
+    entertainment:{ name: "Entretenimento", emoji: "🎬" },
+    whatif:      { name: "E Se...",      emoji: "🤔" },
+    intimacy:    { name: "Intimidade",   emoji: "🔥" },
+    travel:      { name: "Viagens",      emoji: "✈️" },
+    personality: { name: "Personalidade", emoji: "🧠" },
+    spicy:       { name: "Picante",      emoji: "🌶️" }
+};
+
+// ── Sounds ──
 const Sound = {
     ctx: null, on: true,
     _i() { if (this.ctx) return; try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { this.on = false; } },
@@ -43,34 +47,32 @@ const Sound = {
     wrong()   { this._t(200, 0.2, 'square', 0.04); setTimeout(() => this._t(160, 0.3, 'square', 0.04), 150); },
     complete(){ [523,659,784,1047].forEach((f,i) => setTimeout(() => this._t(f, 0.15, 'triangle', 0.07), i*110)); },
     whoosh()  { this._t(300, 0.12, 'sawtooth', 0.025); },
-    pin()     { this._t(1200, 0.04, 'sine', 0.03); },
-    reveal()  { this._t(440, 0.08, 'sine', 0.05); setTimeout(() => this._t(660, 0.08, 'sine', 0.05), 80);
-                setTimeout(() => this._t(880, 0.15, 'sine', 0.05), 160); }
+    pin()     { this._t(1200, 0.04, 'sine', 0.03); }
 };
 
 // ── App ──
 const App = {
-    db: null, fbOk: false, saving: false,
-    user: null,             // 'jose' | 'rita'
-    answers: {},            // own answers {qId: value}
-    partnerAnswers: {},     // partner's answers
-    guesses: {},            // own guesses of partner's answers {qId: value}
-    pins: {},               // {jose: '1234', rita: '5678'}
-    queue: [], qIdx: 0,     // question navigation
-    gQueue: [], gIdx: 0,    // guess navigation
-    gCorrect: 0, gWrong: 0, // guess score
-    _pin: '',               // current PIN being entered
-    _selUser: null,         // user being selected at login
+    db: null, fbOk: false,
+    user: null,
+    answers: {},
+    partnerAnswers: {},
+    pins: {},
+    startDate: null,
+    currentDay: null,   // day being viewed/answered
+    qIdx: 0,            // question index within day
+    dayQuestions: [],    // questions for current day
+    _pin: '',
+    _selUser: null,
+    _saveTimer: null,
+    _savePending: false,
 
     // ══════════ INIT ══════════
     async init() {
         this.hearts();
-        this.countdown();
-        setInterval(() => this.countdown(), 1000);
 
         // Firebase
         try {
-            if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
+            if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
                 firebase.initializeApp(firebaseConfig);
                 this.db = firebase.firestore();
                 this.fbOk = true;
@@ -78,10 +80,13 @@ const App = {
         } catch(e) { console.warn('Firebase:', e); }
 
         // Load PINs
-        try { this.pins = JSON.parse(localStorage.getItem('lq_pins') || '{}'); } catch(e) { this.pins = {}; }
+        try { this.pins = JSON.parse(localStorage.getItem('pr_pins') || '{}'); } catch(e) { this.pins = {}; }
+
+        // Load start date
+        try { this.startDate = localStorage.getItem('pr_start'); } catch(e) {}
 
         // Resume session
-        const sess = localStorage.getItem('lq_session');
+        const sess = localStorage.getItem('pr_session');
         if (sess) {
             this.user = sess;
             await this.loadAll();
@@ -95,6 +100,10 @@ const App = {
         const u = () => { Sound._i(); document.removeEventListener('touchstart', u); document.removeEventListener('click', u); };
         document.addEventListener('touchstart', u, { once: true });
         document.addEventListener('click', u, { once: true });
+
+        // Save on leave
+        window.addEventListener('beforeunload', () => this._flushSave());
+        document.addEventListener('visibilitychange', () => { if (document.hidden) this._flushSave(); });
     },
 
     // ══════════ NAVIGATION ══════════
@@ -102,27 +111,57 @@ const App = {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         const el = document.getElementById('screen-' + id);
         if (el) { el.classList.add('active'); window.scrollTo(0, 0); }
-        if (id === 'dashboard') this.renderDash();
-        if (id === 'question')  this.renderQ();
-        if (id === 'guess')     this.renderGuessQ();
+        if (id === 'dashboard') this.renderCalendar();
+        if (id === 'day')      this.renderQ();
     },
 
-    // ══════════ AUTH (PIN-based) ══════════
+    // ══════════ DAY HELPERS ══════════
+    getDayQuestions(day) {
+        const start = (day - 1) * PER_DAY;
+        return QUESTIONS.slice(start, start + PER_DAY);
+    },
+
+    getUnlockedDays() {
+        if (!this.startDate) return 1;
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const start = new Date(this.startDate);
+        start.setHours(0, 0, 0, 0);
+        const diff = Math.floor((now - start) / 86400000) + 1;
+        return Math.min(Math.max(diff, 1), TOTAL_DAYS);
+    },
+
+    async ensureStartDate() {
+        if (this.startDate) return;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        this.startDate = today.toISOString().split('T')[0];
+        localStorage.setItem('pr_start', this.startDate);
+        if (this.fbOk) {
+            try {
+                const doc = await this.db.collection('config').doc('settings').get();
+                if (doc.exists && doc.data().startDate) {
+                    this.startDate = doc.data().startDate;
+                    localStorage.setItem('pr_start', this.startDate);
+                } else {
+                    await this.db.collection('config').doc('settings').set(
+                        { startDate: this.startDate }, { merge: true }
+                    );
+                }
+            } catch(e) {}
+        }
+    },
+
+    // ══════════ AUTH ══════════
     selectUser(who) {
         Sound.tap();
         this._selUser = who;
         this._pin = '';
-
-        // Highlight selected card
-        document.getElementById('card-jose').classList.toggle('selected', who === 'jose');
+        document.getElementById('card-pedro').classList.toggle('selected', who === 'pedro');
         document.getElementById('card-rita').classList.toggle('selected', who === 'rita');
-
-        // Show PIN pad
         document.getElementById('pin-area').style.display = '';
-        document.getElementById('pin-label').textContent = `PIN ${who === 'jose' ? 'do José' : 'da Rita'}`;
+        document.getElementById('pin-label').textContent = `PIN ${who === 'pedro' ? 'do Pedro' : 'da Rita'}`;
         this.updatePinDots();
-
-        // Hint
         const hasPin = this.pins[who];
         document.querySelector('.pin-hint').textContent = hasPin
             ? 'Introduz o teu PIN para entrar'
@@ -141,8 +180,7 @@ const App = {
     },
 
     updatePinDots() {
-        const dots = document.querySelectorAll('#pin-dots .dot');
-        dots.forEach((d, i) => d.classList.toggle('filled', i < this._pin.length));
+        document.querySelectorAll('#pin-dots .dot').forEach((d, i) => d.classList.toggle('filled', i < this._pin.length));
     },
 
     async tryLogin() {
@@ -150,7 +188,6 @@ const App = {
         const pin = this._pin;
         if (pin.length !== 4) { this.toast('PIN tem de ter 4 dígitos'); return; }
 
-        // Load remote PINs if available
         if (this.fbOk) {
             try {
                 const doc = await this.db.collection('config').doc('pins').get();
@@ -167,32 +204,31 @@ const App = {
             return;
         }
 
-        // First time: save PIN
         if (!stored) {
             this.pins[who] = pin;
-            localStorage.setItem('lq_pins', JSON.stringify(this.pins));
+            localStorage.setItem('pr_pins', JSON.stringify(this.pins));
             if (this.fbOk) {
                 try { await this.db.collection('config').doc('pins').set(this.pins, { merge: true }); } catch(e) {}
             }
         }
 
-        // Login
         this.user = who;
-        localStorage.setItem('lq_session', who);
-        localStorage.setItem('lq_pins', JSON.stringify(this.pins));
+        localStorage.setItem('pr_session', who);
+        localStorage.setItem('pr_pins', JSON.stringify(this.pins));
+        await this.ensureStartDate();
         await this.loadAll();
         Sound.success();
         this.go('dashboard');
-        this.toast(`Olá ${who === 'jose' ? 'José' : 'Rita'}! 💖`);
+        this.toast(`Olá ${who === 'pedro' ? 'Pedro' : 'Rita'}! 💕`);
     },
 
     logout() {
         Sound.tap();
+        this._flushSave();
         this.user = null;
         this.answers = {};
         this.partnerAnswers = {};
-        this.guesses = {};
-        localStorage.removeItem('lq_session');
+        localStorage.removeItem('pr_session');
         this._pin = '';
         this._selUser = null;
         document.getElementById('pin-area').style.display = 'none';
@@ -203,172 +239,162 @@ const App = {
     // ══════════ DATA ══════════
     async loadAll() {
         if (!this.user) return;
-        const p = this.user === 'jose' ? 'rita' : 'jose';
+        const p = this.user === 'pedro' ? 'rita' : 'pedro';
 
-        // Local
-        try { this.answers = JSON.parse(localStorage.getItem('lq_a_' + this.user) || '{}'); } catch(e) { this.answers = {}; }
-        try { this.guesses = JSON.parse(localStorage.getItem('lq_g_' + this.user) || '{}'); } catch(e) { this.guesses = {}; }
+        try { this.answers = JSON.parse(localStorage.getItem('pr_a_' + this.user) || '{}'); } catch(e) { this.answers = {}; }
 
-        // Firebase
         if (this.fbOk) {
             try {
-                const d = await this.db.collection('players').doc(this.user).get();
-                if (d.exists) {
-                    const data = d.data();
-                    // Sempre sincroniza local com Firebase
-                    this.answers = data.answers || {};
-                    this.guesses = data.guesses || {};
+                // Load start date
+                const cfg = await this.db.collection('config').doc('settings').get();
+                if (cfg.exists && cfg.data().startDate) {
+                    this.startDate = cfg.data().startDate;
+                    localStorage.setItem('pr_start', this.startDate);
                 }
+
+                // Own answers – merge
+                const d = await this.db.collection('players').doc(this.user).get();
+                if (d.exists && d.data().answers) {
+                    this.answers = { ...d.data().answers, ...this.answers };
+                }
+
                 // Partner answers
                 const pd = await this.db.collection('players').doc(p).get();
                 if (pd.exists && pd.data().answers) this.partnerAnswers = pd.data().answers;
                 else this.partnerAnswers = {};
-            } catch(e) { console.warn('FB load:', e); this.partnerAnswers = {}; }
+            } catch(e) {
+                console.warn('FB load:', e);
+                this.partnerAnswers = {};
+            }
+            this._scheduleFBSave();
         }
 
-        // Backup local
-        localStorage.setItem('lq_a_' + this.user, JSON.stringify(this.answers));
-        localStorage.setItem('lq_g_' + this.user, JSON.stringify(this.guesses));
+        localStorage.setItem('pr_a_' + this.user, JSON.stringify(this.answers));
     },
 
     async saveAnswer(qId, val) {
         this.answers[qId] = val;
-        localStorage.setItem('lq_a_' + this.user, JSON.stringify(this.answers));
-        if (this.fbOk && !this.saving) {
-            this.saving = true;
-            try {
-                await this.db.collection('players').doc(this.user).set({
-                    answers: this.answers,
-                    guesses: this.guesses,
-                    user: this.user,
-                    answeredCount: Object.keys(this.answers).length,
-                    updated: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true });
-            } catch(e) { console.warn('FB save:', e); }
-            this.saving = false;
+        localStorage.setItem('pr_a_' + this.user, JSON.stringify(this.answers));
+        this._scheduleFBSave();
+    },
+
+    _scheduleFBSave() {
+        if (!this.fbOk) return;
+        this._savePending = true;
+        clearTimeout(this._saveTimer);
+        this._saveTimer = setTimeout(() => this._doFBSave(), 800);
+    },
+
+    _flushSave() {
+        if (this._savePending && this.fbOk) {
+            clearTimeout(this._saveTimer);
+            this._doFBSave();
         }
     },
 
-    async saveGuess(qId, val) {
-        this.guesses[qId] = val;
-        localStorage.setItem('lq_g_' + this.user, JSON.stringify(this.guesses));
-        if (this.fbOk) {
-            try {
-                await this.db.collection('players').doc(this.user).set({
-                    guesses: this.guesses,
-                    updated: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true });
-            } catch(e) {}
+    async _doFBSave() {
+        if (!this._savePending || !this.fbOk || !this.user) return;
+        this._savePending = false;
+        try {
+            await this.db.collection('players').doc(this.user).set({
+                answers: this.answers,
+                user: this.user,
+                answeredCount: Object.keys(this.answers).length,
+                updated: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        } catch(e) {
+            console.warn('FB save:', e);
+            this._savePending = true;
+            this._saveTimer = setTimeout(() => this._doFBSave(), 3000);
         }
     },
 
-    // ══════════ DASHBOARD ══════════
-    renderDash() {
-        const isJ = this.user === 'jose';
-        document.getElementById('dash-emoji').textContent = isJ ? '🧔' : '👩';
-        document.getElementById('dash-name').textContent = isJ ? 'José' : 'Rita';
+    // ══════════ CALENDAR ══════════
+    renderCalendar() {
+        const isP = this.user === 'pedro';
+        document.getElementById('dash-avatar').innerHTML = isP
+            ? '<img src="pedro.jpg" class="av-dash" onerror="this.outerHTML=\'🧔\'">'
+            : '<img src="rita.jpg" class="av-dash" onerror="this.outerHTML=\'👩\'">';
+        document.getElementById('dash-name').textContent = isP ? 'Pedro' : 'Rita';
 
-        const myN = Object.keys(this.answers).length;
-        const partnerN = Object.keys(this.partnerAnswers).length;
-        const pct = (myN / 500) * 100;
-        const bothDone = myN >= 500 && partnerN >= 500;
+        const unlocked = this.getUnlockedDays();
+        const myTotal = Object.keys(this.answers).length;
+        document.getElementById('cal-stats').innerHTML =
+            `<span class="stat">${myTotal}/${QUESTIONS.length} respondidas</span>` +
+            `<span class="stat">Dia ${unlocked} de ${TOTAL_DAYS}</span>`;
 
-        // Ring
-        document.getElementById('prog-num').textContent = myN;
-        const circ = 2 * Math.PI * 52;
-        document.getElementById('prog-fill').style.strokeDasharray = circ;
-        document.getElementById('prog-fill').style.strokeDashoffset = circ - (pct / 100) * circ;
-
-        // Messages
-        const t = document.getElementById('prog-title');
-        const m = document.getElementById('prog-msg');
-        if (myN === 0) { t.textContent = "Vamos começar!"; m.textContent = "500 perguntas à tua espera"; }
-        else if (pct < 25) { t.textContent = "Bom começo!"; m.textContent = `${myN} respondidas`; }
-        else if (pct < 50) { t.textContent = "A ir bem! 💪"; m.textContent = `${myN}/500 – faltam ${500-myN}`; }
-        else if (pct < 75) { t.textContent = "Mais de metade!"; m.textContent = `${myN}/500 feitas`; }
-        else if (pct < 100) { t.textContent = "Quase lá! 🔥"; m.textContent = `Só faltam ${500-myN}!`; }
-        else { t.textContent = "Tudo respondido! 🎉"; m.textContent = "Completaste as 500 perguntas!"; }
-
-        // Daily goal
-        const days = this.daysLeft();
-        const g = document.getElementById('prog-goal');
-        if (days > 0 && 500 - myN > 0) g.textContent = `Meta: ~${Math.ceil((500-myN)/days)}/dia`;
-        else if (myN >= 500) g.textContent = '';
-        else g.textContent = '';
-
-        // Answer button
-        const bt = document.getElementById('btn-answer-text');
-        if (myN === 0) bt.textContent = 'Começar a responder';
-        else if (myN >= 500) bt.textContent = 'Rever respostas';
-        else bt.textContent = 'Continuar a responder';
-
-        // Guess card (Phase 2)
-        const lockEl = document.getElementById('guess-lock');
-        const unlockEl = document.getElementById('guess-unlocked');
-        if (bothDone) {
-            lockEl.style.display = 'none';
-            unlockEl.style.display = '';
-            const gN = Object.keys(this.guesses).length;
-            const guessable = QUESTIONS.filter(q => q.type !== 'text').length;
-            document.getElementById('guess-score').textContent = gN > 0 ? `Já adivinhaste ${gN}/${guessable}` : '';
-        } else {
-            lockEl.style.display = '';
-            unlockEl.style.display = 'none';
-            const partnerName = isJ ? 'Rita' : 'José';
-            document.getElementById('guess-msg').textContent =
-                myN >= 500
-                    ? `À espera que ${partnerName} termine (${partnerN}/500)...`
-                    : `Responde às 500 perguntas para desbloquear. ${partnerName}: ${partnerN}/500`;
-            document.getElementById('guess-progress').innerHTML =
-                `<div class="gp-row"><span>🧔 José: ${isJ ? myN : partnerN}/500</span></div>` +
-                `<div class="gp-row"><span>👩 Rita: ${isJ ? partnerN : myN}/500</span></div>`;
-        }
-
-        // Categories
-        const grid = document.getElementById('cat-grid');
+        const grid = document.getElementById('calendar-grid');
         grid.innerHTML = '';
-        CATEGORIES.forEach(c => {
-            const qs = QUESTIONS.filter(q => q.cat === c.id);
-            const done = qs.filter(q => this.answers[q.id] !== undefined).length;
-            const p2 = qs.length > 0 ? (done / qs.length) * 100 : 0;
-            const ok = done === qs.length && qs.length > 0;
+
+        for (let day = 1; day <= TOTAL_DAYS; day++) {
+            const qs = this.getDayQuestions(day);
+            const myDone = qs.filter(q => this.answers[q.id] !== undefined).length;
+            const partnerDone = qs.filter(q => this.partnerAnswers[q.id] !== undefined).length;
+            const locked = day > unlocked;
+            const allMine = myDone === qs.length;
+            const allPartner = partnerDone === qs.length;
+            const bothDone = allMine && allPartner;
+
+            let state = 'locked';
+            if (!locked) {
+                if (bothDone) state = 'both';
+                else if (allMine) state = 'done';
+                else if (myDone > 0) state = 'progress';
+                else state = 'new';
+            }
+            if (!locked && day === unlocked) state = myDone > 0 ? state : 'today';
+
             const el = document.createElement('button');
-            el.className = 'cat-card' + (ok ? ' done' : '');
-            el.onclick = () => { Sound.tap(); this.startCat(c.id); };
-            el.innerHTML = `<span class="cat-e">${c.emoji}</span><span class="cat-n">${c.name}</span>
-                <div class="cat-bar"><div class="cat-bar-fill" style="width:${p2}%"></div></div>
-                <span class="cat-c">${done}/${qs.length}${ok ? ' ✓' : ''}</span>`;
+            el.className = `cal-day cal-${state}`;
+            el.disabled = locked;
+            el.onclick = locked ? null : () => { Sound.tap(); this.openDay(day); };
+
+            let icon = '';
+            if (locked) icon = '🔒';
+            else if (bothDone) icon = '💕';
+            else if (allMine) icon = '✓';
+            else if (myDone > 0) icon = `${myDone}`;
+            else icon = '';
+
+            el.innerHTML = `<span class="cal-num">${day}</span>` +
+                (icon ? `<span class="cal-icon">${icon}</span>` : '') +
+                (!locked && myDone > 0 && !allMine ? `<div class="cal-mini-bar"><div class="cal-mini-fill" style="width:${myDone/qs.length*100}%"></div></div>` : '');
+
             grid.appendChild(el);
-        });
+        }
+    },
+
+    openDay(day) {
+        const qs = this.getDayQuestions(day);
+        const myDone = qs.filter(q => this.answers[q.id] !== undefined).length;
+        const partnerDone = qs.filter(q => this.partnerAnswers[q.id] !== undefined).length;
+        const bothDone = myDone === qs.length && partnerDone === qs.length;
+
+        if (bothDone) {
+            this.currentDay = day;
+            this.renderCompare(day);
+            this.go('compare');
+            return;
+        }
+
+        this.currentDay = day;
+        this.dayQuestions = qs;
+        const first = qs.find(q => this.answers[q.id] === undefined);
+        this.qIdx = first ? qs.indexOf(first) : 0;
+        this.go('day');
     },
 
     // ══════════ ANSWER MODE ══════════
-    continueAnswering() {
-        Sound.tap();
-        this.queue = QUESTIONS.map(q => q.id);
-        const first = QUESTIONS.find(q => this.answers[q.id] === undefined);
-        this.qIdx = first ? this.queue.indexOf(first.id) : 0;
-        this.go('question');
-    },
-    startCat(catId) {
-        const qs = QUESTIONS.filter(q => q.cat === catId);
-        this.queue = qs.map(q => q.id);
-        const first = qs.find(q => this.answers[q.id] === undefined);
-        this.qIdx = first ? this.queue.indexOf(first.id) : 0;
-        this.go('question');
-    },
-
     renderQ() {
-        if (!this.queue.length) return;
-        const qId = this.queue[this.qIdx];
-        const q = QUESTIONS.find(x => x.id === qId);
+        if (!this.dayQuestions.length) return;
+        const q = this.dayQuestions[this.qIdx];
         if (!q) return;
-        const cat = CATEGORIES[q.cat];
+        const cat = CATEGORIES[q.cat] || { name: q.cat, emoji: '❓' };
 
-        document.getElementById('q-badge').textContent = `${cat.emoji} ${cat.name}`;
-        document.getElementById('q-count').textContent = `${this.qIdx + 1}/${this.queue.length}`;
-        document.getElementById('q-bar-fill').style.width = `${((this.qIdx + 1) / this.queue.length) * 100}%`;
-        document.getElementById('q-num').textContent = `Pergunta ${q.id} de 500`;
+        document.getElementById('day-badge').textContent = `Dia ${this.currentDay}`;
+        document.getElementById('q-count').textContent = `${this.qIdx + 1}/${this.dayQuestions.length}`;
+        document.getElementById('q-bar-fill').style.width = `${((this.qIdx + 1) / this.dayQuestions.length) * 100}%`;
+        document.getElementById('q-cat').innerHTML = `<span class="q-cat-emoji">${cat.emoji}</span> ${cat.name}`;
         document.getElementById('q-text').textContent = q.text;
 
         const area = document.getElementById('q-answers');
@@ -382,16 +408,10 @@ const App = {
             area.innerHTML = `<div class="ans-grid c1">${q.options.map(o =>
                 `<button class="ans-btn${saved === o ? ' sel' : ''}" onclick="App.pick(${q.id}, this)">${this._esc(o)}</button>`
             ).join('')}</div>`;
-        } else if (q.type === 'scale') {
-            area.innerHTML = `<div class="ans-scale">
-                <div class="scale-labels"><span>Nada</span><span>Muito</span></div>
-                <div class="scale-row">${[1,2,3,4,5,6,7,8,9,10].map(n =>
-                    `<button class="scale-btn${saved == n ? ' sel' : ''}" onclick="App.pick(${q.id}, this)">${n}</button>`
-                ).join('')}</div></div>`;
-        } else {
+        } else if (q.type === 'text') {
             area.innerHTML = `<div class="ans-text-wrap">
                 <textarea class="ans-textarea" id="ta" placeholder="Escreve a tua resposta...">${this._esc(saved || '')}</textarea>
-                <button class="btn btn-sm btn-accent" onclick="App.pickText(${q.id})">Guardar</button></div>`;
+                <button class="btn btn-sm btn-accent" onclick="App.pickText(${q.id})">Guardar ✓</button></div>`;
         }
 
         document.getElementById('btn-prev').style.display = this.qIdx > 0 ? '' : 'none';
@@ -408,13 +428,13 @@ const App = {
         Sound.select();
         if (navigator.vibrate) navigator.vibrate(15);
         await this.saveAnswer(qId, val);
-        btn.parentElement.querySelectorAll('.ans-btn, .scale-btn').forEach(b => b.classList.remove('sel'));
+        btn.parentElement.querySelectorAll('.ans-btn').forEach(b => b.classList.remove('sel'));
         btn.classList.add('sel');
         document.getElementById('btn-skip').style.display = 'none';
         document.getElementById('btn-next').style.display = '';
         setTimeout(() => {
-            if (this.qIdx < this.queue.length - 1) this.next();
-            else { Sound.complete(); this.toast('Secção completa! 🎉'); this.confetti(); setTimeout(() => this.go('dashboard'), 1000); }
+            if (this.qIdx < this.dayQuestions.length - 1) this.next();
+            else this._dayComplete();
         }, 350);
     },
 
@@ -427,193 +447,91 @@ const App = {
         this.toast('Guardado! ✓');
         document.getElementById('btn-skip').style.display = 'none';
         document.getElementById('btn-next').style.display = '';
-        setTimeout(() => { if (this.qIdx < this.queue.length - 1) this.next(); }, 400);
+        setTimeout(() => {
+            if (this.qIdx < this.dayQuestions.length - 1) this.next();
+        }, 400);
     },
 
     next() {
-        if (this.qIdx < this.queue.length - 1) { this.qIdx++; Sound.whoosh(); this.renderQ(); window.scrollTo(0,0); }
-        else { Sound.complete(); this.toast('Secção completa! 🎉'); this.confetti(); setTimeout(() => this.go('dashboard'), 1000); }
-    },
-    prev() {
-        if (this.qIdx > 0) { this.qIdx--; Sound.whoosh(); this.renderQ(); window.scrollTo(0,0); }
-    },
-
-    // ══════════ GUESS MODE (Family Feud) ══════════
-    startGuess() {
-        Sound.tap();
-        // Only guessable questions (not text)
-        const guessable = QUESTIONS.filter(q => q.type !== 'text' && this.guesses[q.id] === undefined);
-        if (guessable.length === 0) {
-            // All guessed, show results
-            this.go('results');
-            this.renderResults();
-            return;
-        }
-        this.gQueue = guessable.map(q => q.id);
-        this.gIdx = 0;
-        this.gCorrect = 0;
-        this.gWrong = 0;
-        this.go('guess');
-    },
-
-    renderGuessQ() {
-        if (!this.gQueue.length) return;
-        const qId = this.gQueue[this.gIdx];
-        const q = QUESTIONS.find(x => x.id === qId);
-        if (!q) return;
-
-        const isJ = this.user === 'jose';
-        const partnerName = isJ ? 'a Rita' : 'o José';
-
-        document.getElementById('g-count').textContent = `${this.gIdx + 1}/${this.gQueue.length}`;
-        document.getElementById('g-bar-fill').style.width = `${((this.gIdx + 1) / this.gQueue.length) * 100}%`;
-        document.getElementById('g-num').textContent = `Pergunta ${q.id}`;
-        document.getElementById('g-text').textContent = q.text;
-        document.getElementById('g-partner-name').textContent = `O que achas que ${partnerName} respondeu?`;
-
-        // Hide reveal
-        document.getElementById('reveal-area').style.display = 'none';
-
-        // Score
-        document.getElementById('score-correct').textContent = `✓ ${this.gCorrect}`;
-        document.getElementById('score-wrong').textContent = `✗ ${this.gWrong}`;
-
-        // Options
-        const area = document.getElementById('g-answers');
-        if (q.type === 'thisorthat') {
-            area.innerHTML = `<div class="ans-grid c2">${q.options.map(o =>
-                `<button class="ans-btn" onclick="App.guessAnswer(${q.id}, this)">${this._esc(o)}</button>`
-            ).join('')}</div>`;
-        } else if (q.type === 'choice') {
-            area.innerHTML = `<div class="ans-grid c1">${q.options.map(o =>
-                `<button class="ans-btn" onclick="App.guessAnswer(${q.id}, this)">${this._esc(o)}</button>`
-            ).join('')}</div>`;
-        } else if (q.type === 'scale') {
-            area.innerHTML = `<div class="ans-scale">
-                <div class="scale-labels"><span>Nada</span><span>Muito</span></div>
-                <div class="scale-row">${[1,2,3,4,5,6,7,8,9,10].map(n =>
-                    `<button class="scale-btn" onclick="App.guessAnswer(${q.id}, this)">${n}</button>`
-                ).join('')}</div></div>`;
-        }
-        area.style.display = '';
-
-        const card = document.getElementById('g-card');
-        card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
-    },
-
-    async guessAnswer(qId, btn) {
-        const guess = btn.textContent.trim();
-        const q = QUESTIONS.find(x => x.id === qId);
-        const actual = this.partnerAnswers[qId];
-        if (actual === undefined) return;
-
-        // Disable all buttons
-        document.getElementById('g-answers').querySelectorAll('button').forEach(b => {
-            b.disabled = true;
-            b.style.pointerEvents = 'none';
-        });
-
-        let correct = false;
-        if (q.type === 'scale') {
-            correct = Math.abs(Number(guess) - Number(actual)) <= 1; // within 1 = correct
-        } else {
-            correct = String(guess) === String(actual);
-        }
-
-        if (correct) this.gCorrect++; else this.gWrong++;
-        await this.saveGuess(qId, guess);
-
-        // Mark correct/wrong
-        btn.classList.add(correct ? 'guess-right' : 'guess-wrong');
-
-        // Highlight actual answer
-        if (!correct) {
-            document.getElementById('g-answers').querySelectorAll('button').forEach(b => {
-                if (b.textContent.trim() === String(actual)) b.classList.add('guess-actual');
-            });
-        }
-
-        // Reveal
-        if (navigator.vibrate) navigator.vibrate(correct ? [20, 30, 20] : [100]);
-        setTimeout(() => {
-            if (correct) { Sound.reveal(); } else { Sound.wrong(); }
-            document.getElementById('g-answers').style.display = 'none';
-            document.getElementById('reveal-area').style.display = '';
-            document.getElementById('reveal-icon').textContent = correct ? '💚' : '💛';
-            document.getElementById('reveal-label').textContent = correct ? 'Acertaste!' : 'Quase!';
-            document.getElementById('reveal-answer').textContent =
-                correct ? `Ambos: ${actual}` : `Respondeu: ${actual}`;
-            document.getElementById('reveal-card').className = 'reveal-card ' + (correct ? 'reveal-correct' : 'reveal-wrong');
-
-            document.getElementById('score-correct').textContent = `✓ ${this.gCorrect}`;
-            document.getElementById('score-wrong').textContent = `✗ ${this.gWrong}`;
-
-            if (correct) this.miniConfetti();
-        }, 500);
-    },
-
-    nextGuess() {
-        if (this.gIdx < this.gQueue.length - 1) {
-            this.gIdx++;
+        if (this.qIdx < this.dayQuestions.length - 1) {
+            this.qIdx++;
             Sound.whoosh();
-            this.renderGuessQ();
+            this.renderQ();
             window.scrollTo(0, 0);
         } else {
+            this._dayComplete();
+        }
+    },
+    prev() {
+        if (this.qIdx > 0) { this.qIdx--; Sound.whoosh(); this.renderQ(); window.scrollTo(0, 0); }
+    },
+
+    _dayComplete() {
+        const qs = this.dayQuestions;
+        const done = qs.filter(q => this.answers[q.id] !== undefined).length;
+        if (done === qs.length) {
             Sound.complete();
             this.confetti();
-            const total = this.gCorrect + this.gWrong;
-            const pct = total > 0 ? Math.round(this.gCorrect / total * 100) : 0;
-            this.toast(`Ronda completa! ${pct}% corretas 🎉`);
-            setTimeout(() => this.go('dashboard'), 1500);
+            this.toast('Dia completo! 🎉');
+            setTimeout(() => this.go('dashboard'), 1200);
+        } else {
+            this.toast(`Faltam ${qs.length - done} perguntas neste dia`);
+            this.go('dashboard');
         }
     },
 
-    // ══════════ RESULTS ══════════
-    async renderResults() {
-        await this.loadAll();
-        const myN = Object.keys(this.answers).length;
-        const pN = Object.keys(this.partnerAnswers).length;
-        const isJ = this.user === 'jose';
-        document.getElementById('rc-jose').textContent = `${isJ ? myN : pN}/500`;
-        document.getElementById('rc-rita').textContent = `${isJ ? pN : myN}/500`;
-        this.filterResults('all');
-    },
+    // ══════════ COMPARE ══════════
+    renderCompare(day) {
+        document.getElementById('compare-badge').textContent = `Dia ${day}`;
+        const qs = this.getDayQuestions(day);
+        const list = document.getElementById('compare-list');
 
-    filterResults(f) {
-        document.querySelectorAll('.fbtn').forEach(b => b.classList.toggle('active', b.dataset.f === f));
-        const list = document.getElementById('results-list');
-        const both = QUESTIONS.filter(q => this.answers[q.id] !== undefined && this.partnerAnswers[q.id] !== undefined);
-        if (!both.length) { list.innerHTML = '<p class="empty-msg">Ambos precisam de responder para comparar! 💕</p>'; document.getElementById('match-box').style.display = 'none'; return; }
+        // Match percentage (only for non-text questions)
+        const comparable = qs.filter(q => q.type !== 'text' && this.answers[q.id] !== undefined && this.partnerAnswers[q.id] !== undefined);
+        let matches = 0;
+        comparable.forEach(q => {
+            if (String(this.answers[q.id]) === String(this.partnerAnswers[q.id])) matches++;
+        });
 
-        const comp = both.filter(q => q.type !== 'text');
-        let match = 0;
-        comp.forEach(q => { if (String(this.answers[q.id]) === String(this.partnerAnswers[q.id])) match++; });
-        const pct = comp.length ? Math.round(match / comp.length * 100) : 0;
-        document.getElementById('match-box').style.display = '';
-        document.getElementById('match-num').textContent = pct + '%';
+        const matchEl = document.getElementById('compare-match');
+        if (comparable.length > 0) {
+            const pct = Math.round(matches / comparable.length * 100);
+            matchEl.style.display = '';
+            document.getElementById('compare-pct').textContent = pct + '%';
+        } else {
+            matchEl.style.display = 'none';
+        }
 
-        let items = both;
-        if (f === 'match') items = both.filter(q => String(this.answers[q.id]) === String(this.partnerAnswers[q.id]));
-        if (f === 'diff')  items = both.filter(q => String(this.answers[q.id]) !== String(this.partnerAnswers[q.id]));
+        list.innerHTML = qs.map(q => {
+            const my = this.answers[q.id];
+            const pa = this.partnerAnswers[q.id];
+            const cat = CATEGORIES[q.cat] || { emoji: '❓' };
+            const bothAnswered = my !== undefined && pa !== undefined;
+            const isMatch = bothAnswered && q.type !== 'text' && String(my) === String(pa);
+            const isDiff = bothAnswered && q.type !== 'text' && String(my) !== String(pa);
 
-        const isJ = this.user === 'jose';
-        list.innerHTML = items.length === 0 ? '<p class="empty-msg">Nenhum resultado neste filtro.</p>'
-            : items.map(q => {
-                const my = this.answers[q.id], pa = this.partnerAnswers[q.id];
-                const ok = String(my) === String(pa);
-                return `<div class="res-item ${ok ? 'res-match' : 'res-diff'}">
-                    <div class="res-q">${this._esc(q.text)}</div>
-                    <div class="res-ans-row">
-                        <div class="res-ans"><div class="res-who">🧔 José</div><div class="res-val">${this._esc(isJ ? my : pa)}</div></div>
-                        <div class="res-ans"><div class="res-who">👩 Rita</div><div class="res-val">${this._esc(isJ ? pa : my)}</div></div>
-                    </div></div>`;
-            }).join('');
+            return `<div class="cmp-item ${isMatch ? 'cmp-match' : ''} ${isDiff ? 'cmp-diff' : ''}">
+                <div class="cmp-cat">${cat.emoji}</div>
+                <div class="cmp-q">${this._esc(q.text)}</div>
+                <div class="cmp-answers">
+                    <div class="cmp-ans cmp-pedro">
+                        <div class="cmp-who">Pedro</div>
+                        <div class="cmp-val">${my !== undefined ? this._esc(String(my)) : '<em>—</em>'}</div>
+                    </div>
+                    <div class="cmp-ans cmp-rita">
+                        <div class="cmp-who">Rita</div>
+                        <div class="cmp-val">${pa !== undefined ? this._esc(String(pa)) : '<em>—</em>'}</div>
+                    </div>
+                </div>
+                ${isMatch ? '<div class="cmp-badge-match">Iguais! 💚</div>' : ''}
+            </div>`;
+        }).join('');
     },
 
     // ══════════ RESET ══════════
     resetConfirm() {
         document.getElementById('modal').style.display = '';
-        document.getElementById('modal-msg').textContent = `Apagar TODAS as respostas de ${this.user === 'jose' ? 'José' : 'Rita'}? Esta ação não pode ser desfeita!`;
+        document.getElementById('modal-msg').textContent = `Apagar TODAS as respostas de ${this.user === 'pedro' ? 'Pedro' : 'Rita'}? Esta ação não pode ser desfeita!`;
         document.getElementById('modal-confirm').onclick = () => this.doReset();
     },
     modalClose() { document.getElementById('modal').style.display = 'none'; },
@@ -621,40 +539,18 @@ const App = {
     async doReset() {
         this.modalClose();
         this.answers = {};
-        this.guesses = {};
-        localStorage.setItem('lq_a_' + this.user, '{}');
-        localStorage.setItem('lq_g_' + this.user, '{}');
+        localStorage.setItem('pr_a_' + this.user, '{}');
         if (this.fbOk) {
             try {
                 await this.db.collection('players').doc(this.user).set({
-                    answers: {}, guesses: {},
-                    user: this.user, answeredCount: 0,
+                    answers: {}, user: this.user, answeredCount: 0,
                     updated: firebase.firestore.FieldValue.serverTimestamp()
                 });
             } catch(e) { console.warn('Reset FB:', e); }
         }
         Sound.tap();
-        this.toast('Tudo apagado! Começa de novo. 🔄');
-        this.renderDash();
-    },
-
-    // ══════════ COUNTDOWN ══════════
-    daysLeft() { const n = new Date(), v = new Date(n.getFullYear(),1,14,23,59,59); return n > v ? 0 : Math.ceil((v-n)/864e5); },
-    countdown() {
-        const now = new Date(), vd = new Date(now.getFullYear(),1,14,23,59,59), diff = vd - now;
-        const we = document.getElementById('cd-welcome'), ti = document.getElementById('cd-timer');
-        if (diff <= 0) {
-            if (we) we.textContent = 'Feliz Dia dos Namorados! 💕';
-            if (ti) ti.innerHTML = '<span class="cd-done">Feliz Dia dos Namorados! 💕</span>';
-            return;
-        }
-        const d=Math.floor(diff/864e5),h=Math.floor(diff%864e5/36e5),m=Math.floor(diff%36e5/6e4),s=Math.floor(diff%6e4/1e3);
-        if (we) we.textContent = `⏰ Faltam ${d} dias para o Dia dos Namorados!`;
-        if (ti) ti.innerHTML =
-            `<div class="cd-u"><span class="cd-n">${d}</span><span class="cd-l">dias</span></div>` +
-            `<div class="cd-u"><span class="cd-n">${String(h).padStart(2,'0')}</span><span class="cd-l">horas</span></div>` +
-            `<div class="cd-u"><span class="cd-n">${String(m).padStart(2,'0')}</span><span class="cd-l">min</span></div>` +
-            `<div class="cd-u"><span class="cd-n">${String(s).padStart(2,'0')}</span><span class="cd-l">seg</span></div>`;
+        this.toast('Tudo apagado! 🔄');
+        this.renderCalendar();
     },
 
     // ══════════ HELPERS ══════════
@@ -663,13 +559,13 @@ const App = {
     hearts() {
         const c = document.getElementById('hearts-bg');
         const hs = ['💖','💕','💗','💓','💝','♥️','💘'];
-        for (let i = 0; i < 18; i++) {
+        for (let i = 0; i < 15; i++) {
             const s = document.createElement('span'); s.className = 'fh';
             s.textContent = hs[Math.floor(Math.random()*hs.length)];
             s.style.left = Math.random()*100+'%';
-            s.style.fontSize = (12+Math.random()*16)+'px';
-            s.style.animationDuration = (10+Math.random()*18)+'s';
-            s.style.animationDelay = Math.random()*12+'s';
+            s.style.fontSize = (12+Math.random()*14)+'px';
+            s.style.animationDuration = (12+Math.random()*20)+'s';
+            s.style.animationDelay = Math.random()*14+'s';
             c.appendChild(s);
         }
     },
@@ -690,19 +586,6 @@ const App = {
             d.style.animationDuration = (2+Math.random()*2)+'s';
             document.body.appendChild(d);
             setTimeout(() => d.remove(), 4500);
-        }
-    },
-
-    miniConfetti() {
-        const cols = ['#4caf50','#ffd54f','#e91e63'];
-        for (let i = 0; i < 12; i++) {
-            const d = document.createElement('div'); d.className = 'confetti';
-            d.style.left = (30+Math.random()*40)+'vw';
-            d.style.background = cols[Math.floor(Math.random()*cols.length)];
-            d.style.animationDelay = Math.random()*0.5+'s';
-            d.style.animationDuration = (1.5+Math.random()*1.5)+'s';
-            document.body.appendChild(d);
-            setTimeout(() => d.remove(), 3000);
         }
     }
 };

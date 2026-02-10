@@ -6,8 +6,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="theme-color" content="#1a0011">
-    <title>500 Perguntas de Amor</title>
+    <meta name="theme-color" content="#0f0a1a">
+    <title>Pedro & Rita</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💕%3C/text%3E%3C/svg%3E">
     <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -19,12 +19,25 @@
     <!-- ===== WELCOME ===== -->
     <div id="screen-welcome" class="screen active">
         <div class="screen-inner centered">
-            <div class="logo-hearts"><span class="hf">💖</span><span class="hf d1">💕</span><span class="hf d2">💗</span></div>
-            <h1 class="title-main">500 Perguntas<br><span class="title-script">de Amor</span></h1>
-            <div class="couple-badge"><span class="name-jose">José</span><span class="heart-beat">❤️</span><span class="name-rita">Rita</span></div>
-            <p class="subtitle">Um jogo para nos conhecermos ainda melhor</p>
-            <div class="countdown-mini" id="cd-welcome"></div>
-            <button class="btn btn-primary btn-glow" onclick="App.go('login')">Começar</button>
+            <div class="intro-photos">
+                <div class="intro-photo-wrap">
+                    <img src="pedro.jpg" alt="Pedro" class="intro-photo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <div class="intro-photo-fallback" style="display:none">🧔</div>
+                </div>
+                <div class="intro-heart">❤️</div>
+                <div class="intro-photo-wrap">
+                    <img src="rita.jpg" alt="Rita" class="intro-photo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <div class="intro-photo-fallback" style="display:none">👩</div>
+                </div>
+            </div>
+            <h1 class="title-main">Pedro <span class="title-amp">&</span> Rita</h1>
+            <p class="intro-tagline">O nosso jogo</p>
+            <div class="intro-letter">
+                <p>Este jogo é nosso. Só nosso.</p>
+                <p>Todos os dias, 15 novas perguntas para descobrirmos mais um sobre o outro. Sem pressa, ao nosso ritmo.</p>
+                <p>Responde com honestidade — é assim que nos vamos conhecer a sério. 💕</p>
+            </div>
+            <button class="btn btn-primary btn-glow" onclick="App.go('login')">Entrar</button>
         </div>
     </div>
 
@@ -32,20 +45,26 @@
     <div id="screen-login" class="screen">
         <div class="screen-inner centered">
             <h2 class="section-title">Quem és tu?</h2>
-            <p class="subtitle">Escolhe o teu perfil e entra com o teu PIN</p>
+            <p class="subtitle">Escolhe o teu perfil</p>
             <div class="login-grid">
-                <button class="card-login" id="card-jose" onclick="App.selectUser('jose')">
-                    <div class="card-emoji">🧔</div>
-                    <div class="card-name">José</div>
+                <button class="card-login" id="card-pedro" onclick="App.selectUser('pedro')">
+                    <div class="card-photo">
+                        <img src="pedro.jpg" alt="Pedro" class="card-photo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                        <div class="card-photo-fallback" style="display:none">🧔</div>
+                    </div>
+                    <div class="card-name">Pedro</div>
                 </button>
                 <button class="card-login" id="card-rita" onclick="App.selectUser('rita')">
-                    <div class="card-emoji">👩</div>
+                    <div class="card-photo">
+                        <img src="rita.jpg" alt="Rita" class="card-photo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                        <div class="card-photo-fallback" style="display:none">👩</div>
+                    </div>
                     <div class="card-name">Rita</div>
                 </button>
             </div>
             <!-- PIN entry -->
             <div id="pin-area" class="pin-area" style="display:none">
-                <p class="pin-label" id="pin-label">PIN do José</p>
+                <p class="pin-label" id="pin-label">PIN do Pedro</p>
                 <div class="pin-dots" id="pin-dots">
                     <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
                 </div>
@@ -68,60 +87,27 @@
         </div>
     </div>
 
-    <!-- ===== DASHBOARD ===== -->
+    <!-- ===== DASHBOARD (Calendar) ===== -->
     <div id="screen-dashboard" class="screen">
         <div class="screen-inner">
             <div class="dash-top">
-                <div class="dash-user"><span id="dash-emoji"></span><span id="dash-name"></span></div>
+                <div class="dash-user">
+                    <span id="dash-avatar"></span>
+                    <span id="dash-name"></span>
+                </div>
                 <button class="btn-icon" onclick="App.logout()" title="Sair">🚪</button>
             </div>
 
-            <div class="countdown-box">
-                <div class="cd-label">Faltam para o Dia dos Namorados</div>
-                <div class="cd-timer" id="cd-timer"></div>
+            <div class="cal-header">
+                <h2>Os Nossos Dias</h2>
+                <p class="cal-sub">15 perguntas novas todos os dias</p>
+                <div class="cal-stats" id="cal-stats"></div>
             </div>
 
-            <!-- Progress card -->
-            <div class="progress-card">
-                <div class="prog-ring-wrap">
-                    <svg class="prog-ring" viewBox="0 0 120 120">
-                        <circle class="prog-bg" cx="60" cy="60" r="52"/>
-                        <circle class="prog-fill" id="prog-fill" cx="60" cy="60" r="52"/>
-                    </svg>
-                    <div class="prog-center"><span class="prog-num" id="prog-num">0</span><span class="prog-of">/500</span></div>
-                </div>
-                <div class="prog-info">
-                    <h3 id="prog-title">Vamos começar!</h3>
-                    <p id="prog-msg" class="prog-sub"></p>
-                    <div class="prog-goal" id="prog-goal"></div>
-                </div>
+            <div class="calendar-grid" id="calendar-grid">
+                <!-- Generated by JS -->
             </div>
 
-            <!-- Phase 1: Answer -->
-            <button class="btn btn-primary btn-block" id="btn-answer" onclick="App.continueAnswering()">
-                <span id="btn-answer-text">Começar a responder</span><span class="arrow">→</span>
-            </button>
-
-            <!-- Phase 2: Guess (locked until both finish) -->
-            <div class="guess-card" id="guess-card">
-                <div class="guess-lock" id="guess-lock">
-                    <span class="guess-icon">🔒</span>
-                    <p class="guess-msg" id="guess-msg">Modo Adivinhar desbloqueia quando ambos terminarem as 500 perguntas</p>
-                    <div class="guess-progress" id="guess-progress"></div>
-                </div>
-                <div class="guess-unlocked" id="guess-unlocked" style="display:none">
-                    <span class="guess-icon">🎯</span>
-                    <h3>Modo Adivinhar</h3>
-                    <p>Tenta adivinhar o que o/a teu/tua parceiro/a respondeu!</p>
-                    <button class="btn btn-primary" onclick="App.startGuess()">Jogar →</button>
-                    <div class="guess-score" id="guess-score"></div>
-                </div>
-            </div>
-
-            <h3 class="cat-heading">Categorias</h3>
-            <div class="cat-grid" id="cat-grid"></div>
-
-            <!-- Admin: Reset -->
             <details class="reset-details">
                 <summary class="reset-summary">Opções avançadas</summary>
                 <button class="btn btn-danger btn-block" onclick="App.resetConfirm()">
@@ -131,17 +117,17 @@
         </div>
     </div>
 
-    <!-- ===== QUESTION (Answer mode) ===== -->
-    <div id="screen-question" class="screen">
+    <!-- ===== DAY VIEW (Answer questions) ===== -->
+    <div id="screen-day" class="screen">
         <div class="screen-inner">
             <div class="q-top">
                 <button class="btn-back" onclick="App.go('dashboard')">← Voltar</button>
-                <span class="q-badge" id="q-badge"></span>
+                <span class="day-badge" id="day-badge">Dia 1</span>
                 <span class="q-count" id="q-count"></span>
             </div>
             <div class="q-bar"><div class="q-bar-fill" id="q-bar-fill"></div></div>
             <div class="q-card" id="q-card">
-                <div class="q-num" id="q-num"></div>
+                <div class="q-cat" id="q-cat"></div>
                 <p class="q-text" id="q-text"></p>
             </div>
             <div class="q-answers" id="q-answers"></div>
@@ -153,71 +139,32 @@
         </div>
     </div>
 
-    <!-- ===== GUESS MODE (Family Feud) ===== -->
-    <div id="screen-guess" class="screen">
+    <!-- ===== COMPARE VIEW ===== -->
+    <div id="screen-compare" class="screen">
         <div class="screen-inner">
             <div class="q-top">
                 <button class="btn-back" onclick="App.go('dashboard')">← Voltar</button>
-                <span class="guess-badge">🎯 Modo Adivinhar</span>
-                <span class="q-count" id="g-count"></span>
-            </div>
-            <div class="q-bar"><div class="q-bar-fill" id="g-bar-fill"></div></div>
-
-            <div class="guess-prompt">
-                <p id="g-partner-name">O que achas que a Rita respondeu?</p>
-            </div>
-
-            <div class="q-card" id="g-card">
-                <div class="q-num" id="g-num"></div>
-                <p class="q-text" id="g-text"></p>
-            </div>
-
-            <!-- Guess options -->
-            <div class="q-answers" id="g-answers"></div>
-
-            <!-- Reveal area (hidden until guess) -->
-            <div class="reveal-area" id="reveal-area" style="display:none">
-                <div class="reveal-card" id="reveal-card">
-                    <div class="reveal-icon" id="reveal-icon"></div>
-                    <div class="reveal-label" id="reveal-label"></div>
-                    <div class="reveal-answer" id="reveal-answer"></div>
-                </div>
-                <button class="btn btn-primary" id="reveal-next" onclick="App.nextGuess()">Próxima →</button>
-            </div>
-
-            <!-- Score bar -->
-            <div class="score-bar">
-                <span class="score-correct" id="score-correct">✓ 0</span>
-                <span class="score-wrong" id="score-wrong">✗ 0</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- ===== RESULTS ===== -->
-    <div id="screen-results" class="screen">
-        <div class="screen-inner">
-            <div class="q-top">
-                <button class="btn-back" onclick="App.go('dashboard')">← Voltar</button>
-                <h2 class="results-title">Resultados</h2>
+                <span class="day-badge" id="compare-badge">Dia 1</span>
                 <span></span>
             </div>
-            <div class="results-couple-card">
-                <div class="rc-person"><span class="rc-emoji">🧔</span><span>José</span><span class="rc-count" id="rc-jose">0/500</span></div>
-                <div class="rc-heart">💕</div>
-                <div class="rc-person"><span class="rc-emoji">👩</span><span>Rita</span><span class="rc-count" id="rc-rita">0/500</span></div>
+            <div class="compare-header">
+                <div class="compare-person">
+                    <img src="pedro.jpg" alt="Pedro" class="compare-av" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <div class="compare-av-emoji" style="display:none">🧔</div>
+                    <span>Pedro</span>
+                </div>
+                <div class="compare-vs">vs</div>
+                <div class="compare-person">
+                    <img src="rita.jpg" alt="Rita" class="compare-av" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <div class="compare-av-emoji" style="display:none">👩</div>
+                    <span>Rita</span>
+                </div>
             </div>
-            <div class="match-box" id="match-box" style="display:none">
-                <div class="match-num" id="match-num">0%</div>
-                <div class="match-label">Compatibilidade</div>
+            <div class="compare-match" id="compare-match" style="display:none">
+                <span class="compare-pct" id="compare-pct">0%</span>
+                <span class="compare-label">parecidos neste dia</span>
             </div>
-            <div class="filter-row">
-                <button class="fbtn active" data-f="all" onclick="App.filterResults('all')">Todas</button>
-                <button class="fbtn" data-f="match" onclick="App.filterResults('match')">Iguais 💚</button>
-                <button class="fbtn" data-f="diff" onclick="App.filterResults('diff')">Diferentes 💛</button>
-            </div>
-            <div class="results-list" id="results-list">
-                <p class="empty-msg">Ambos precisam de responder para comparar! 💕</p>
-            </div>
+            <div class="compare-list" id="compare-list"></div>
         </div>
     </div>
 
