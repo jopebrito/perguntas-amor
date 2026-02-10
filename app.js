@@ -215,12 +215,11 @@ const App = {
                 const d = await this.db.collection('players').doc(this.user).get();
                 if (d.exists) {
                     const data = d.data();
-                    if (data.answers && Object.keys(data.answers).length >= Object.keys(this.answers).length)
-                        this.answers = data.answers;
-                    if (data.guesses && Object.keys(data.guesses).length >= Object.keys(this.guesses).length)
-                        this.guesses = data.guesses;
+                    // Sempre sincroniza local com Firebase
+                    this.answers = data.answers || {};
+                    this.guesses = data.guesses || {};
                 }
-                // Partner answers (only load if both completed for guess mode)
+                // Partner answers
                 const pd = await this.db.collection('players').doc(p).get();
                 if (pd.exists && pd.data().answers) this.partnerAnswers = pd.data().answers;
                 else this.partnerAnswers = {};
